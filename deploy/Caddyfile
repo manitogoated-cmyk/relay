@@ -1,0 +1,12 @@
+# Automatic HTTPS (Let's Encrypt) in front of Relay.
+{$RELAY_DOMAIN} {
+	encode gzip
+	# Uploads up to RELAY_MAX_UPLOAD_BYTES (25 MB default) plus multipart overhead.
+	request_body {
+		max_size 27MB
+	}
+	reverse_proxy relay:8100 {
+		# Server-Sent Events: stream immediately, never buffer.
+		flush_interval -1
+	}
+}
