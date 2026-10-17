@@ -47,13 +47,22 @@ Proxy requirements (nginx, Caddy, IIS, Cloudflare Tunnel and others):
 ## Option C: this PC through a Cloudflare quick tunnel (what's running now)
 
 ```powershell
-winget install Cloudflare.cloudflared        # once
-powershell -File scripts\serve-public.ps1    # keeps running; Ctrl+C or close to stop
+winget install Cloudflare.cloudflared              # once
+powershell -File scripts\install-autostart.ps1     # admin PowerShell: start at boot, and now
+powershell -File scripts\stop-public.ps1           # stop it and disable the task
+powershell -File scripts\serve-public.ps1          # or: run it by hand in this window
 ```
 
-The script starts a tunnel, reads its `https://<random>.trycloudflare.com` address, and runs Relay in production mode against
-`data\prod` (separate from development data). The address is saved in `data\prod\public-url.txt`. Logs go to
-`data\prod\server.log` and `data\prod\tunnel.log`.
+`serve-public.ps1` starts a tunnel, reads its `https://<random>.trycloudflare.com` address, and runs Relay in production mode
+against `data\prod` (separate from development data). The address is saved in `data\prod\public-url.txt`. It stays running as a
+watchdog: it restarts the server if it exits or stops answering `/api/health` for 2 minutes (same address), and opens a new
+tunnel if cloudflared exits or the network isn't up yet (new address). Logs go to `data\prod\launcher.log`, `server.log`
+(the previous run's is kept as `server.prev.log`) and `tunnel.log`.
+
+`install-autostart.ps1` registers the task **Relay**: it runs at boot as your user, before anyone signs in (S4U logon, so no
+password is stored), and a re-check every 5 minutes starts it again if the watchdog itself has ended. While the task is enabled,
+stopping the processes by hand just gets them restarted; use `stop-public.ps1`, which disables the task. Rerun
+`install-autostart.ps1` to turn it back on.
 
 - Create the owner account **on this PC** at http://localhost:8100 (first-run setup is refused from the internet), then sign in
   at the public address from anywhere.
@@ -63,7 +72,7 @@ The script starts a tunnel, reads its `https://<random>.trycloudflare.com` addre
   `RELAY_PUBLIC_BASE_URL` to that domain.
 - Quick tunnels buffer Server-Sent Events. The dashboard notices the stream stays silent and switches to long-polling
   `/api/app/events` within about 8 seconds. Updates still arrive in well under a second.
-- It is only reachable while this PC is on and the script is running.
+- It is only reachable while this PC is on (with the task, also while nobody is signed in). Sleep pauses it.
 
 ## Storage
 
