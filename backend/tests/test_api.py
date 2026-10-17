@@ -518,3 +518,27 @@ def test_production_refuses_to_start_without_https_base(make_app):
 
     with pytest.raises(RuntimeError, match="PUBLIC_BASE_URL"):
         make_app(RELAY_ENVIRONMENT="production", RELAY_PUBLIC_BASE_URL="")
+
+
+def test_long_poll_events_fallback(client):
+    from app.broker import broker
+
+    start = client.get("/api/app/events").json()
+    assert start["events"] == [] and isinstance(start["last_id"], int)
+    hook, secret = make_webhook(client)
+    client.post(ingest_path(hook), json={"message": "polled"}, headers=bearer(secret))
+    got = client.get("/api/app/events", params={"after": start["last_id"], "wait": 0}).json()
+    types = [e["type"] for e in got["events"]]
+    assert "message.created" in types and got["last_id"] > start["last_id"]
+    msg = next(e for e in got["events"] if e["type"] == "message.created")["data"]["message"]
+    assert msg["content"] == "polled"
+    # Nothing new: returns after the wait with the cursor unchanged.
+    idle = client.get("/api/app/events", params={"after": got["last_id"], "wait": 0.2}).json()
+    assert idle == {"last_id": got["last_id"], "events": [], "resync": False}
+    # A cursor from before a restart (ahead of the server) asks the client to resync.
+    assert client.get("/api/app/events", params={"after": broker.last_id + 1000, "wait": 0}).json()["resync"] is True
+    # Other accounts never see these events; signed-out callers are refused.
+    create_account("other")
+    other = login(anon(client), "other")
+    assert other.get("/api/app/events", params={"after": start["last_id"], "wait": 0}).json()["events"] == []
+    assert anon(client).get("/api/app/events").status_code == 401

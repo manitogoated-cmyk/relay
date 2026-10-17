@@ -104,6 +104,7 @@ class FakeEventSource {
   open() {
     this.readyState = 1;
     this.onopen?.();
+    this.emit("hello", { connections: 1 });
   }
   emit(type: string, data: unknown, id = "") {
     for (const fn of this.listeners.get(type) ?? []) fn(new MessageEvent(type, { data: JSON.stringify(data), lastEventId: id }));
@@ -162,5 +163,38 @@ describe("useLiveStream", () => {
     renderHook(() => useLiveStream(true, { onEvent: vi.fn(), onResync }));
     act(() => FakeEventSource.instances[0].emit("resync", {}));
     expect(onResync).toHaveBeenCalled();
+  });
+
+  it("falls back to long-polling when a proxy buffers the stream", async () => {
+    const onEvent = vi.fn();
+    const onResync = vi.fn();
+    const responses = [
+      { last_id: 10, events: [], resync: false },
+      { last_id: 11, events: [{ id: 11, type: "message.created", data: { message: { id: 3 } } }], resync: false },
+    ];
+    const fetchMock = vi.fn((_url: string) => {
+      const body = responses.shift();
+      return body ? Promise.resolve(new Response(JSON.stringify(body), { status: 200 })) : new Promise<Response>(() => {});
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { result, unmount } = renderHook(() => useLiveStream(true, { onEvent, onResync }));
+    const es = FakeEventSource.instances[0];
+    act(() => {
+      es.readyState = 1;
+      es.onopen?.(); // opened, but the hello never makes it through
+    });
+    expect(result.current).toBe("connecting");
+    await act(async () => {
+      vi.advanceTimersByTime(8000);
+      await vi.runOnlyPendingTimersAsync();
+    });
+    expect(es.readyState).toBe(2);
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/app/events");
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/app/events?after=10&wait=25");
+    expect(result.current).toBe("live");
+    expect(onResync).toHaveBeenCalledTimes(1);
+    expect(onEvent).toHaveBeenCalledWith("message.created", { message: { id: 3 } });
+    expect(fetchMock.mock.calls[2][0]).toBe("/api/app/events?after=11&wait=25");
+    unmount();
   });
 });

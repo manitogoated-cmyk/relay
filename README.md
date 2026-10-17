@@ -40,6 +40,9 @@ curl -X POST "http://127.0.0.1:8100/api/webhooks/<id>" -H "Authorization: Bearer
   -F 'payload_json={"message":"Nightly report"}' -F "files=@report.pdf" -F "files=@chart.png"
 ```
 
+To reach it from the internet without a server, run `scripts\serve-public.ps1` (Cloudflare quick tunnel). See
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#option-c-this-pc-through-a-cloudflare-quick-tunnel-whats-running-now).
+
 The in-app **Docs** page covers every field, the file rules, limits, response codes, and examples in curl, Python, Node and PowerShell.
 
 ## Checks

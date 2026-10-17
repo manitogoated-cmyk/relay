@@ -549,3 +549,7 @@ h1, h2, h3 { margin: 0; letter-spacing: -0.01em; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
 }
+
+/* Webhook colours are picked for dark backgrounds; deepen them on light ones so names stay readable. */
+:root[data-theme="light"] .msg-sender,
+:root[data-theme="light"] .preview-name { filter: brightness(0.62) saturate(1.3); }

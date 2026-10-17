@@ -44,8 +44,26 @@ Proxy requirements (nginx, Caddy, IIS, Cloudflare Tunnel and others):
   Relay already sends `X-Accel-Buffering: no`.
 - Allow request bodies up to `RELAY_MAX_UPLOAD_BYTES` plus about 1 MB (nginx: `client_max_body_size 27m;`).
 
-Exposing the PC without opening ports: `cloudflared tunnel --url http://127.0.0.1:8100` gives an https URL. Set
-`RELAY_PUBLIC_BASE_URL` to it.
+## Option C: this PC through a Cloudflare quick tunnel (what's running now)
+
+```powershell
+winget install Cloudflare.cloudflared        # once
+powershell -File scripts\serve-public.ps1    # keeps running; Ctrl+C or close to stop
+```
+
+The script starts a tunnel, reads its `https://<random>.trycloudflare.com` address, and runs Relay in production mode against
+`data\prod` (separate from development data). The address is saved in `data\prod\public-url.txt`. Logs go to
+`data\prod\server.log` and `data\prod\tunnel.log`.
+
+- Create the owner account **on this PC** at http://localhost:8100 (first-run setup is refused from the internet), then sign in
+  at the public address from anywhere.
+- The address **changes every time the script starts**, and webhook URLs change with it. For a permanent address use a named tunnel
+  on a domain in your Cloudflare account (`cloudflared tunnel login`, `cloudflared tunnel create relay`,
+  `cloudflared tunnel route dns relay relay.yourdomain.com`), run it with `--url http://127.0.0.1:8100`, and set
+  `RELAY_PUBLIC_BASE_URL` to that domain.
+- Quick tunnels buffer Server-Sent Events. The dashboard notices the stream stays silent and switches to long-polling
+  `/api/app/events` within about 8 seconds. Updates still arrive in well under a second.
+- It is only reachable while this PC is on and the script is running.
 
 ## Storage
 

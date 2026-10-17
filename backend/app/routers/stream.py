@@ -76,3 +76,39 @@ async def stream(request: Request):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
     )
+
+
+@router.get("/events")
+async def poll_events(request: Request, after: int | None = None, wait: float = 25.0):
+    """Long-poll fallback for networks that buffer event streams (e.g. Cloudflare quick tunnels).
+    Returns events after `after`, waiting up to `wait` seconds for the next one."""
+    user_id = await run_in_threadpool(_user_id, request)
+    if user_id is None:
+        raise ApiError(401, "not_signed_in", "Sign in to continue.")
+    if after is None:
+        return {"last_id": broker.last_id, "events": [], "resync": False}
+
+    def payload(events, resync=False):
+        return {
+            # With nothing new, keep the caller's cursor: jumping to the global newest id could skip an
+            # event published between the replay and this line.
+            "last_id": broker.last_id if resync else events[-1].id if events else after,
+            "events": [{"id": e.id, "type": e.type, "data": e.data} for e in events],
+            "resync": resync,
+        }
+
+    queue = broker.subscribe(user_id)
+    try:
+        missed = broker.replay_since(user_id, after)
+        if missed is None:
+            return payload([], resync=True)
+        if missed:
+            return payload(missed)
+        try:
+            await asyncio.wait_for(queue.get(), timeout=max(0.0, min(wait, 25.0)))
+        except TimeoutError:
+            pass
+        missed = broker.replay_since(user_id, after)
+        return payload([], resync=True) if missed is None else payload(missed)
+    finally:
+        broker.unsubscribe(user_id, queue)

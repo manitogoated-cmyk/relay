@@ -31,6 +31,7 @@ class Broker:
         self._subs: dict[int, set[asyncio.Queue[Event | None]]] = {}
         self._history: deque[Event] = deque(maxlen=history)
         self._seq = itertools.count(1)
+        self.last_id = 0
         self._lock = threading.Lock()
         self._queue_size = queue_size
         self.loop: asyncio.AbstractEventLoop | None = None
@@ -60,7 +61,9 @@ class Broker:
         with self._lock:
             events = [e for e in self._history if e.owner_id == owner_id]
             oldest = self._history[0].id if self._history else None
-        if oldest is not None and last_id < oldest - 1:
+            newest = self.last_id
+        # Too old for the history, or from before a server restart (ids start over): resync.
+        if (oldest is not None and last_id < oldest - 1) or last_id > newest:
             return None
         return [e for e in events if e.id > last_id]
 
@@ -68,6 +71,7 @@ class Broker:
         """Safe to call from the event loop or from a worker thread."""
         with self._lock:
             event = Event(next(self._seq), owner_id, type_, data)
+            self.last_id = event.id
             self._history.append(event)
         loop = self.loop
         if loop is None or loop.is_closed():
